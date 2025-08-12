@@ -1,0 +1,19 @@
+{
+  "name": "memran/marwa-event",
+  "description": "Blazing-fast, PSR-14 compliant event dispatcher with Laravel-style ergonomics (no globals).",
+  "type": "library",
+  "license": "MIT",
+  "require": {
+    "php": ">=8.1",
+    "psr/event-dispatcher": "^1.0",
+    "psr/container": "^2.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "Marwa\\Event\\": "src/"
+    }
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^10.0"
+  }
+}

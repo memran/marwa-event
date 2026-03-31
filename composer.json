@@ -3,6 +3,12 @@
   "description": "Blazing-fast, PSR-14 compliant event dispatcher with Laravel-style ergonomics (no globals).",
   "type": "library",
   "license": "MIT",
+  "keywords": [
+    "events",
+    "psr-14",
+    "dispatcher",
+    "listener"
+  ],
   "require": {
     "php": ">=8.1",
     "psr/event-dispatcher": "^1.0",
@@ -14,6 +20,20 @@
     }
   },
   "require-dev": {
+    "friendsofphp/php-cs-fixer": "^3.89",
+    "phpstan/phpstan": "^2.1",
     "phpunit/phpunit": "^10.0"
+  },
+  "scripts": {
+    "test": "vendor/bin/phpunit",
+    "test:coverage": "php scripts/run-coverage.php",
+    "analyse": "vendor/bin/phpstan analyse --no-progress --debug",
+    "lint": "vendor/bin/php-cs-fixer fix --dry-run --diff --verbose",
+    "fix": "vendor/bin/php-cs-fixer fix --verbose",
+    "ci": [
+      "@test",
+      "@analyse",
+      "@lint"
+    ]
   }
 }

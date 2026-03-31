@@ -1,14 +1,15 @@
 <?php
 
-require_once 'vendor/autoload.php';
+declare(strict_types=1);
 
-use Marwa\Event\Resolver\ListenerResolver;
-use Marwa\Event\Core\ListenerProvider;
-use Marwa\Event\Core\EventDispatcher;
+require_once __DIR__ . '/vendor/autoload.php';
+
 use Marwa\Event\Bus\EventBus;
 use Marwa\Event\Contracts\StoppableEvent;
+use Marwa\Event\Core\EventDispatcher;
+use Marwa\Event\Core\ListenerProvider;
+use Marwa\Event\Resolver\ListenerResolver;
 
-// 1) Define events
 final class UserRegistered extends StoppableEvent
 {
     public function __construct(public string $email) {}
@@ -16,24 +17,21 @@ final class UserRegistered extends StoppableEvent
 
 final class AuditRegistration
 {
-    public function __invoke(UserRegistered $user)
+    public function __invoke(UserRegistered $event): void
     {
-
-        $numbers = range(1, 100);
-        var_dump($numbers);
-        //echo "Welcome to " . $user->email . "\n";
+        echo "Audit log for {$event->email}" . PHP_EOL;
     }
 }
-// Bootstrap (container-less example)
-$resolver   = new ListenerResolver();
-$provider   = new ListenerProvider($resolver);
-$dispatcher = new EventDispatcher($provider);
-$bus        = new EventBus($provider, $dispatcher);
 
-// Register listeners
-$bus->listen(UserRegistered::class, function (UserRegistered $event) {
-    echo "Welcome {$event->email}";
+$resolver = new ListenerResolver();
+$provider = new ListenerProvider($resolver);
+$dispatcher = new EventDispatcher($provider);
+$bus = new EventBus($provider, $dispatcher);
+
+$bus->listen(UserRegistered::class, static function (UserRegistered $event): void {
+    echo "Welcome {$event->email}" . PHP_EOL;
 }, 100);
 
-// Dispatch event
+$bus->listen(UserRegistered::class, AuditRegistration::class, 10);
+
 $bus->dispatch(new UserRegistered('user@example.com'));

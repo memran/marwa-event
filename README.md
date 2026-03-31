@@ -1,148 +1,100 @@
 # Marwa Event
 
-**Blazing-fast, PSR‑14–compliant event dispatch library** with Laravel‑style ergonomics (no global helpers).  
-Performance-first, container-friendly, and simple to test.
+PSR-14 compliant event dispatching for PHP applications that want a small, framework-agnostic library with simple listener registration and predictable synchronous execution.
 
-## Features
+## Requirements
 
-- ✅ **PSR‑14 compliant**: Uses `ListenerProviderInterface` and `EventDispatcherInterface`
-- ⚡ **Fast**: Priority queues via `SplPriorityQueue`, no reflection on the hot path
-- 🧠 **Smart listener resolution**: `callable`, `Class@method`, `['Class','method']`, or invokable class — lazy-resolved
-- 🧩 **Container-aware**: Optional PSR‑11 container for listener instantiation
-- 🧵 **Stoppable events**: Base `StoppableEvent` provided
-- 🧪 **Testable**: Clean, SOLID design with PHPUnit examples
+- PHP `>=8.1`
+- Composer
 
-## Install
+## Installation
 
 ```bash
 composer require memran/marwa-event
 ```
 
-> For local development with this repo:
->
-> ```bash
-> composer install
-> vendor/bin/phpunit
-> ```
+For local development:
+
+```bash
+composer install
+composer ci
+```
 
 ## Quick Start
 
 ```php
-use Marwa\Event\Resolver\ListenerResolver;
-use Marwa\Event\Core\ListenerProvider;
-use Marwa\Event\Core\EventDispatcher;
 use Marwa\Event\Bus\EventBus;
+use Marwa\Event\Core\EventDispatcher;
+use Marwa\Event\Core\ListenerProvider;
+use Marwa\Event\Resolver\ListenerResolver;
 
-// Bootstrap (no container)
-$resolver   = new ListenerResolver();           // optionally pass a PSR-11 container
-$provider   = new ListenerProvider($resolver);
+$resolver = new ListenerResolver();
+$provider = new ListenerProvider($resolver);
 $dispatcher = new EventDispatcher($provider);
-$bus        = new EventBus($provider, $dispatcher);
+$bus = new EventBus($provider, $dispatcher);
 
-// Event
-final class UserRegistered extends Marwa\Event\Contracts\StoppableEvent {
-    public function __construct(public string $email) {}
-}
+$bus->listen(UserRegistered::class, SendWelcomeMail::class, 100);
+$bus->listen(UserRegistered::class, [AuditListener::class, 'handle'], 50);
 
-// Listeners
-$bus->listen(UserRegistered::class, function (UserRegistered $e) {
-    // send welcome
-}, 100);
-
-$bus->listen(UserRegistered::class, [App\Listeners\Audit::class, 'handle'], 0);
-$bus->listen(UserRegistered::class, App\Listeners\NotifyAdmin::class); // invokable
-
-// Dispatch
 $bus->dispatch(new UserRegistered('user@example.com'));
 ```
 
-## Subscribers
+## Features
 
-```php
-use Marwa\Event\Contracts\Subscriber;
+- PSR-14 `EventDispatcherInterface` and `ListenerProviderInterface` aligned
+- Listener formats: callable, `"Class@method"`, `["Class", "method"]`, and invokable class strings
+- Parent class and interface listener matching with priority ordering
+- Optional PSR-11 container support for listener instantiation
+- Stoppable events via `Marwa\Event\Contracts\StoppableEvent`
 
-final class UserSubscriber implements Subscriber
-{
-    public static function getSubscribedEvents(): array
-    {
-        return [
-            UserRegistered::class => [
-                ['welcome', 50],
-                ['audit', 0],
-            ],
-        ];
-    }
+## Project Layout
 
-    public function welcome(UserRegistered $e): void {/* ... */}
-    public function audit(UserRegistered $e): void {/* ... */}
-}
+```text
+src/
+  Bus/         Facade-style API
+  Contracts/   Shared interfaces and base event types
+  Core/        Dispatcher and listener provider
+  Resolver/    Listener notation resolution
+tests/         PHPUnit test suite
+example.php    Minimal runnable example
 ```
 
-Register:
+## Development Workflow
 
-```php
-$bus->subscribe(UserSubscriber::class);
-```
-
-## Architecture
-
-- `Contracts/StoppableEvent` — base class implementing `StoppableEventInterface` with `stopPropagation()`
-- `Contracts/Subscriber` — map events to methods with optional priorities
-- `Resolver/ListenerResolver` — converts listener notations into callables (container-aware)
-- `Core/ListenerProvider` — per-event priority queues + cached type graph for parent/interfaces
-- `Core/EventDispatcher` — minimal synchronous dispatcher, optional exception swallowing
-- `Bus/EventBus` — thin facade-like API: `listen()`, `subscribe()`, `dispatch()`, `forget()`
-
-## API
-
-```php
-int   EventBus::listen(string $eventClass, callable|string|array $listener, int $priority = 0)
-bool  EventBus::forget(int $id)
-void  EventBus::subscribe(Subscriber|string $subscriber)
-object EventBus::dispatch(object $event)
-```
-
-### Listener formats
-
-- `callable` — `function (MyEvent $e) {}`
-- `"Class@method"`
-- `["Class", "method"]`
-- `"Class"` — invokable class
-
-## Testing
+Common Composer scripts:
 
 ```bash
-vendor/bin/phpunit
+composer test          # PHPUnit
+composer test:coverage # PHPUnit with Clover output (requires Xdebug or PCOV)
+composer analyse       # PHPStan
+composer lint          # PHP-CS-Fixer dry run
+composer fix           # PHP-CS-Fixer apply fixes
+composer ci            # test + analyse + lint
 ```
 
-### Example Test
+## Usage Notes
 
-```php
-public function testPriorityOrder(): void
-{
-    $bus = $this->makeBus();
-    $seq = [];
+- Higher priority values run first.
+- Equal priorities keep registration order.
+- Invalid listener or subscriber definitions fail fast with `InvalidArgumentException`.
+- `EventDispatcher` can optionally swallow listener exceptions, but the default is to surface them.
 
-    $bus->listen(MyEvent::class, function () use (&$seq) { $seq[] = 2; }, 0);
-    $bus->listen(MyEvent::class, function () use (&$seq) { $seq[] = 1; }, 100);
+## Testing and Static Analysis
 
-    $bus->dispatch(new MyEvent());
+The repository includes PHPUnit 10, PHPStan, PHP-CS-Fixer, and a GitHub Actions workflow that runs validation, tests, static analysis, linting, and coverage.
 
-    $this->assertSame([1, 2], $seq);
-}
-```
+## Security and Production Notes
 
-## Production Notes
+- No global helpers or framework coupling are required.
+- Listener class strings are instantiated directly unless a PSR-11 container is supplied.
+- Keep listener classes explicit and trusted; this library does not load arbitrary code or deserialize payloads.
+- Review public API changes in `README.md`, `example.php`, and tests together before release.
 
-- High priority values run first (max-heap)
-- All event type matches are cached after the first dispatch
-- Use PSR‑11 container to enable dependency-injected listeners
+## Contributing
 
-## Versioning & Compatibility
+See [AGENTS.md](AGENTS.md) for repository-specific contributor guidance.
 
-- PHP `>= 8.1`
-- PSR‑14, PSR‑11 (optional)
+## Release Notes
 
-## License
-
-MIT © Mohammad Emran.
+- `main` is expected to stay releasable.
+- Run `composer ci` before tagging or publishing.

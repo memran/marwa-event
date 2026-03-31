@@ -1,6 +1,8 @@
 # Marwa Event
 
 [![CI](https://github.com/memran/marwa-event/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/memran/marwa-event/actions/workflows/ci.yml)
+[![Latest Version on Packagist](https://img.shields.io/packagist/v/memran/marwa-event.svg)](https://packagist.org/packages/memran/marwa-event)
+[![Total Downloads](https://img.shields.io/packagist/dt/memran/marwa-event.svg)](https://packagist.org/packages/memran/marwa-event)
 ![PHP 8.2+](https://img.shields.io/badge/PHP-8.2%2B-777BB4?logo=php&logoColor=white)
 ![PHPStan 2.x](https://img.shields.io/badge/PHPStan-2.x-2E3440)
 ![PHPUnit 10](https://img.shields.io/badge/PHPUnit-10-3C9CD7)

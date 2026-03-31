@@ -8,6 +8,7 @@ use InvalidArgumentException;
 use Marwa\Event\Contracts\Subscriber;
 use Marwa\Event\Core\EventDispatcher;
 use Marwa\Event\Core\ListenerProvider;
+use Psr\Container\ContainerInterface;
 use Throwable;
 
 /**
@@ -20,7 +21,8 @@ final class EventBus
 {
     public function __construct(
         private readonly ListenerProvider $provider,
-        private readonly EventDispatcher $dispatcher
+        private readonly EventDispatcher $dispatcher,
+        private readonly ?ContainerInterface $container = null
     ) {}
 
     /**
@@ -80,6 +82,16 @@ final class EventBus
 
     private function instantiateSubscriber(string $subscriber): Subscriber
     {
+        if ($this->container !== null && $this->container->has($subscriber)) {
+            $resolved = $this->container->get($subscriber);
+
+            if (!$resolved instanceof Subscriber) {
+                throw new InvalidArgumentException("Subscriber class '{$subscriber}' must implement Subscriber.");
+            }
+
+            return $resolved;
+        }
+
         if (!class_exists($subscriber)) {
             throw new InvalidArgumentException("Subscriber class '{$subscriber}' does not exist.");
         }

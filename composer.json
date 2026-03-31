@@ -1,6 +1,6 @@
 {
   "name": "memran/marwa-event",
-  "description": "Blazing-fast, PSR-14 compliant event dispatcher with Laravel-style ergonomics (no globals).",
+  "description": "Lightweight PSR-14 event dispatcher for PHP 8.2+ with stable priority ordering, stoppable events, and optional container-aware resolution.",
   "type": "library",
   "license": "MIT",
   "keywords": [
@@ -10,7 +10,7 @@
     "listener"
   ],
   "require": {
-    "php": ">=8.1",
+    "php": ">=8.2",
     "psr/event-dispatcher": "^1.0",
     "psr/container": "^2.0"
   },
@@ -19,8 +19,14 @@
       "Marwa\\Event\\": "src/"
     }
   },
+  "config": {
+    "allow-plugins": {
+      "infection/extension-installer": false
+    }
+  },
   "require-dev": {
     "friendsofphp/php-cs-fixer": "^3.89",
+    "infection/infection": "^0.31",
     "phpstan/phpstan": "^2.1",
     "phpunit/phpunit": "^10.0"
   },
@@ -28,6 +34,7 @@
     "test": "vendor/bin/phpunit",
     "test:coverage": "php scripts/run-coverage.php",
     "analyse": "vendor/bin/phpstan analyse --no-progress --debug",
+    "mutate": "php scripts/run-mutation.php",
     "lint": "vendor/bin/php-cs-fixer fix --dry-run --diff --verbose",
     "fix": "vendor/bin/php-cs-fixer fix --verbose",
     "ci": [

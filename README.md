@@ -1,10 +1,17 @@
 # Marwa Event
 
-PSR-14 compliant event dispatching for PHP applications that want a small, framework-agnostic library with simple listener registration and predictable synchronous execution.
+[![CI](https://github.com/memran/marwa-event/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/memran/marwa-event/actions/workflows/ci.yml)
+![PHP 8.2+](https://img.shields.io/badge/PHP-8.2%2B-777BB4?logo=php&logoColor=white)
+![PHPStan 2.x](https://img.shields.io/badge/PHPStan-2.x-2E3440)
+![PHPUnit 10](https://img.shields.io/badge/PHPUnit-10-3C9CD7)
+![Infection Ready](https://img.shields.io/badge/Infection-ready-6E40C9)
+![License MIT](https://img.shields.io/badge/License-MIT-green.svg)
+
+Lightweight PSR-14 event dispatching for PHP 8.2+ with predictable synchronous delivery, stable priority ordering, optional PSR-11 container integration, and a small framework-agnostic API.
 
 ## Requirements
 
-- PHP `>=8.1`
+- PHP `>=8.2`
 - Composer
 
 ## Installation
@@ -19,6 +26,16 @@ For local development:
 composer install
 composer ci
 ```
+
+## Features
+
+- PSR-14 aligned dispatcher and listener provider
+- Stable priority ordering, including ties and mixed parent/interface listeners
+- Flexible listener definitions: callable, `"Class@method"`, `["Class", "method"]`, and invokable class strings
+- Optional PSR-11 container resolution for listeners and subscriber class strings
+- Stoppable events via `Marwa\Event\Contracts\StoppableEvent`
+- Fail-fast validation for invalid listener and subscriber definitions
+- PHPUnit, PHPStan 2.x, PHP-CS-Fixer, GitHub Actions CI, and Infection setup
 
 ## Quick Start
 
@@ -35,17 +52,102 @@ $bus = new EventBus($provider, $dispatcher);
 
 $bus->listen(UserRegistered::class, SendWelcomeMail::class, 100);
 $bus->listen(UserRegistered::class, [AuditListener::class, 'handle'], 50);
+$bus->listen(UserRegistered::class, static function (UserRegistered $event): void {
+    // metrics or notifications
+}, 10);
 
 $bus->dispatch(new UserRegistered('user@example.com'));
 ```
 
-## Features
+## Examples
 
-- PSR-14 `EventDispatcherInterface` and `ListenerProviderInterface` aligned
-- Listener formats: callable, `"Class@method"`, `["Class", "method"]`, and invokable class strings
-- Parent class and interface listener matching with priority ordering
-- Optional PSR-11 container support for listener instantiation
-- Stoppable events via `Marwa\Event\Contracts\StoppableEvent`
+### Define a Stoppable Event
+
+```php
+use Marwa\Event\Contracts\StoppableEvent;
+
+final class UserRegistered extends StoppableEvent
+{
+    public function __construct(public string $email) {}
+}
+```
+
+### Register a Subscriber
+
+```php
+use Marwa\Event\Contracts\Subscriber;
+
+final class UserSubscriber implements Subscriber
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [
+            UserRegistered::class => [
+                ['sendWelcome', 100],
+                ['audit', 50],
+            ],
+        ];
+    }
+
+    public function sendWelcome(UserRegistered $event): void {}
+
+    public function audit(UserRegistered $event): void {}
+}
+
+$bus->subscribe(new UserSubscriber());
+```
+
+### Remove a Listener
+
+```php
+$listenerId = $bus->listen(UserRegistered::class, SendWelcomeMail::class, 100);
+
+$bus->forget($listenerId);
+```
+
+### Listen on an Interface or Parent Event Type
+
+```php
+interface DomainEvent {}
+
+class BaseOrderEvent implements DomainEvent {}
+
+final class OrderPlaced extends BaseOrderEvent {}
+
+$bus->listen(DomainEvent::class, LogDomainEvent::class, 100);
+$bus->listen(BaseOrderEvent::class, UpdateReadModel::class, 50);
+$bus->listen(OrderPlaced::class, SendOrderEmail::class, 10);
+
+$bus->dispatch(new OrderPlaced());
+```
+
+### Use Container-Aware Resolution
+
+```php
+use Marwa\Event\Bus\EventBus;
+use Marwa\Event\Core\EventDispatcher;
+use Marwa\Event\Core\ListenerProvider;
+use Marwa\Event\Resolver\ListenerResolver;
+
+$resolver = new ListenerResolver($container);
+$provider = new ListenerProvider($resolver);
+$dispatcher = new EventDispatcher($provider);
+$bus = new EventBus($provider, $dispatcher, $container);
+
+$bus->listen(UserRegistered::class, SendWelcomeMail::class);
+$bus->subscribe(UserSubscriber::class);
+```
+
+When a PSR-11 container is provided, listener and subscriber class strings are resolved from the container first.
+
+### Swallow Listener Exceptions Explicitly
+
+```php
+$dispatcher = new EventDispatcher($provider, swallowExceptions: true);
+$bus = new EventBus($provider, $dispatcher);
+```
+
+The default remains `false`, which is usually the safer production choice.
 
 ## Project Layout
 
@@ -61,40 +163,29 @@ example.php    Minimal runnable example
 
 ## Development Workflow
 
-Common Composer scripts:
-
 ```bash
 composer test          # PHPUnit
-composer test:coverage # PHPUnit with Clover output (requires Xdebug or PCOV)
-composer analyse       # PHPStan
+composer test:coverage # Coverage output; requires Xdebug or PCOV
+composer analyse       # PHPStan 2.x
+composer mutate        # Infection mutation testing; requires Xdebug, PCOV, or phpdbg
 composer lint          # PHP-CS-Fixer dry run
 composer fix           # PHP-CS-Fixer apply fixes
 composer ci            # test + analyse + lint
 ```
 
-## Usage Notes
+## Notes
 
 - Higher priority values run first.
 - Equal priorities keep registration order.
-- Invalid listener or subscriber definitions fail fast with `InvalidArgumentException`.
-- `EventDispatcher` can optionally swallow listener exceptions, but the default is to surface them.
+- Invalid listeners and subscribers throw `InvalidArgumentException`.
+- Exceptions bubble by default unless `EventDispatcher` is explicitly configured otherwise.
 
-## Testing and Static Analysis
+## Quality and Release
 
-The repository includes PHPUnit 10, PHPStan, PHP-CS-Fixer, and a GitHub Actions workflow that runs validation, tests, static analysis, linting, and coverage.
+The repository includes PHPUnit 10, PHPStan 2.x, PHP-CS-Fixer, GitHub Actions CI, and Infection configuration. Run `composer ci` before opening a PR or cutting a release.
 
-## Security and Production Notes
-
-- No global helpers or framework coupling are required.
-- Listener class strings are instantiated directly unless a PSR-11 container is supplied.
-- Keep listener classes explicit and trusted; this library does not load arbitrary code or deserialize payloads.
-- Review public API changes in `README.md`, `example.php`, and tests together before release.
+Mutation testing is available through Infection. Run `composer mutate` after `composer test` when you want to measure how well the suite detects behavioral regressions. It requires Xdebug, PCOV, or `phpdbg` so Infection can collect coverage for the initial test pass.
 
 ## Contributing
 
 See [AGENTS.md](AGENTS.md) for repository-specific contributor guidance.
-
-## Release Notes
-
-- `main` is expected to stay releasable.
-- Run `composer ci` before tagging or publishing.

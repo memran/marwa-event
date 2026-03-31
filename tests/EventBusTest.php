@@ -8,6 +8,7 @@ use Marwa\Event\Core\EventDispatcher;
 use Marwa\Event\Core\ListenerProvider;
 use Marwa\Event\Resolver\ListenerResolver;
 use PHPUnit\Framework\TestCase;
+use Psr\Container\ContainerInterface;
 
 final class EventBusTest extends TestCase
 {
@@ -30,6 +31,26 @@ final class EventBusTest extends TestCase
         $event = new ClassStringSubscriberEvent();
         $bus->dispatch($event);
 
+        $this->assertTrue($event->handled);
+    }
+
+    public function testSubscribeResolvesSubscriberClassStringFromContainerWhenAvailable(): void
+    {
+        $resolver = new ListenerResolver();
+        $provider = new ListenerProvider($resolver);
+        $dispatcher = new EventDispatcher($provider);
+        $subscriber = new ContainerSubscriber();
+        $container = new SubscriberContainer([
+            ContainerSubscriber::class => $subscriber,
+        ]);
+        $bus = new EventBus($provider, $dispatcher, $container);
+
+        $bus->subscribe(ContainerSubscriber::class);
+
+        $event = new ContainerSubscriberEvent();
+        $bus->dispatch($event);
+
+        $this->assertSame(['container-subscriber'], $subscriber->calls);
         $this->assertTrue($event->handled);
     }
 
@@ -118,5 +139,53 @@ final class InvalidSubscriber implements Subscriber
         return [
             SubscriberEvent::class => [['']],
         ];
+    }
+}
+
+final class ContainerSubscriberEvent
+{
+    public bool $handled = false;
+}
+
+final class ContainerSubscriber implements Subscriber
+{
+    /** @var list<string> */
+    public array $calls = [];
+
+    public static function getSubscribedEvents(): array
+    {
+        return [
+            ContainerSubscriberEvent::class => 'handle',
+        ];
+    }
+
+    public function handle(ContainerSubscriberEvent $event): void
+    {
+        $this->calls[] = 'container-subscriber';
+        $event->handled = true;
+    }
+}
+
+final class SubscriberContainer implements ContainerInterface
+{
+    /**
+     * @param array<string, object> $entries
+     */
+    public function __construct(
+        private readonly array $entries
+    ) {}
+
+    public function get(string $id): object
+    {
+        if (!isset($this->entries[$id])) {
+            throw new InvalidArgumentException("Container entry '{$id}' not found.");
+        }
+
+        return $this->entries[$id];
+    }
+
+    public function has(string $id): bool
+    {
+        return isset($this->entries[$id]);
     }
 }

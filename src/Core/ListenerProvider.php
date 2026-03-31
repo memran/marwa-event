@@ -1,26 +1,25 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Marwa\Event\Core;
 
 use Marwa\Event\Resolver\ListenerResolver;
 use Psr\EventDispatcher\ListenerProviderInterface;
-use SplPriorityQueue;
 
 /**
- * High-performance listener provider with:
- * - Per-event-class priority queues
- * - Interface/parent-type matching with caching
- * - O(1) lookups for known types
+ * @phpstan-type ListenerDefinition callable|string|array<int, mixed>
+ * @phpstan-type ListenerEntry array{id: int, listener: ListenerDefinition, priority: int}
  */
 final class ListenerProvider implements ListenerProviderInterface
 {
-    /** @var array<string, SplPriorityQueue> */
-    private array $queues = [];
+    /** @var array<string, list<ListenerEntry>> */
+    private array $listenersByEvent = [];
 
-    /** @var array<int, array{event:string, listener:callable|string|array, priority:int}> */
+    /** @var array<int, array{event: string, priority: int}> */
     private array $registry = [];
 
-    /** @var array<string, string[]> Cached hierarchy for event FQCN => [class chain + interfaces] */
+    /** @var array<string, list<string>> Cached hierarchy for event FQCN => [class chain + interfaces] */
     private array $typeCache = [];
 
     private int $autoId = 0;
@@ -32,17 +31,18 @@ final class ListenerProvider implements ListenerProviderInterface
     /**
      * Register a listener for an event FQCN.
      * Returns a numeric id which can be used to remove the listener later.
+     *
+     * @param ListenerDefinition $listener
      */
     public function addListener(string $eventClass, callable|string|array $listener, int $priority = 0): int
     {
         $id = ++$this->autoId;
-        $this->registry[$id] = ['event' => $eventClass, 'listener' => $listener, 'priority' => $priority];
+        $entry = ['id' => $id, 'listener' => $listener, 'priority' => $priority];
 
-        if (!isset($this->queues[$eventClass])) {
-            $this->queues[$eventClass] = $this->newQueue();
-        }
+        $this->registry[$id] = ['event' => $eventClass, 'priority' => $priority];
+        $this->listenersByEvent[$eventClass][] = $entry;
+        $this->sortEntries($this->listenersByEvent[$eventClass]);
 
-        $this->queues[$eventClass]->insert($listener, $priority);
         return $id;
     }
 
@@ -52,60 +52,53 @@ final class ListenerProvider implements ListenerProviderInterface
         if (!isset($this->registry[$id])) {
             return false;
         }
-        $entry = $this->registry[$id];
+
+        $eventClass = $this->registry[$id]['event'];
         unset($this->registry[$id]);
 
-        // Rebuild the queue for that event to keep SplPriorityQueue lean
-        $eventClass = $entry['event'];
-        if (isset($this->queues[$eventClass])) {
-            $this->queues[$eventClass] = $this->newQueue();
-            foreach ($this->registry as $r) {
-                if ($r['event'] === $eventClass) {
-                    $this->queues[$eventClass]->insert($r['listener'], $r['priority']);
-                }
-            }
+        if (!isset($this->listenersByEvent[$eventClass])) {
+            return true;
         }
+
+        $this->listenersByEvent[$eventClass] = array_values(
+            array_filter(
+                $this->listenersByEvent[$eventClass],
+                static fn (array $entry): bool => $entry['id'] !== $id
+            )
+        );
+
+        if ($this->listenersByEvent[$eventClass] === []) {
+            unset($this->listenersByEvent[$eventClass]);
+        }
+
         return true;
     }
 
     /**
-     * @inheritDoc
+     * @return iterable<callable>
      */
     public function getListenersForEvent(object $event): iterable
     {
-        $types = $this->expandTypes($event);
+        $matches = [];
 
-        // Fast path: gather listeners across all matching types
-        $listeners = [];
-        foreach ($types as $type) {
-            if (!isset($this->queues[$type])) {
-                continue;
-            }
-            // Clone queue to iterate without disturbing original
-            $q = clone $this->queues[$type];
-            $q->setExtractFlags(SplPriorityQueue::EXTR_DATA);
-            foreach ($q as $listener) {
-                // Resolve lazily right before dispatch
-                $listeners[] = $this->resolver->resolve($listener);
+        foreach ($this->expandTypes($event) as $type) {
+            foreach ($this->listenersByEvent[$type] ?? [] as $entry) {
+                $matches[] = $entry;
             }
         }
 
-        return $listeners;
-    }
+        $this->sortEntries($matches);
 
-    private function newQueue(): SplPriorityQueue
-    {
-        // Max-heap (default) works well; higher priority first.
-        $q = new SplPriorityQueue();
-        $q->setExtractFlags(SplPriorityQueue::EXTR_BOTH); // keep data + priority during internal ops
-        return $q;
+        foreach ($matches as $match) {
+            yield $this->resolver->resolve($match['listener']);
+        }
     }
 
     /**
      * Build + cache list of relevant types for an event:
      * [class, parents..., interfaces...]
      *
-     * Cached per event FQCN to avoid repeated class graph work.
+     * @return list<string>
      */
     private function expandTypes(object $event): array
     {
@@ -115,25 +108,28 @@ final class ListenerProvider implements ListenerProviderInterface
             return $this->typeCache[$class];
         }
 
-        // Build class chain
         $types = [$class];
         $parent = get_parent_class($class);
-        while ($parent) {
+        while ($parent !== false) {
             $types[] = $parent;
             $parent = get_parent_class($parent);
         }
 
-        // Add interfaces (unique)
-        $ifaces = class_implements($class);
-        if ($ifaces) {
-            foreach ($ifaces as $iface) {
-                $types[] = $iface;
-            }
+        foreach (class_implements($class) ?: [] as $interface) {
+            $types[] = $interface;
         }
 
-        // De-duplicate while preserving order
-        $types = array_values(array_unique($types));
+        return $this->typeCache[$class] = array_values(array_unique($types));
+    }
 
-        return $this->typeCache[$class] = $types;
+    /**
+     * @param list<ListenerEntry> $entries
+     */
+    private function sortEntries(array &$entries): void
+    {
+        usort(
+            $entries,
+            static fn (array $left, array $right): int => [$right['priority'], $left['id']] <=> [$left['priority'], $right['id']]
+        );
     }
 }

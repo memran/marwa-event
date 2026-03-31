@@ -1,14 +1,20 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Marwa\Event\Bus;
 
+use InvalidArgumentException;
+use Marwa\Event\Contracts\Subscriber;
 use Marwa\Event\Core\EventDispatcher;
 use Marwa\Event\Core\ListenerProvider;
-use Marwa\Event\Contracts\Subscriber;
+use Throwable;
 
 /**
  * A thin, fluent facade-like API resembling Laravel's Event facade.
  * Compose this in your container and bind as a singleton.
+ *
+ * @phpstan-type ListenerDefinition callable|string|array<int, mixed>
  */
 final class EventBus
 {
@@ -17,7 +23,11 @@ final class EventBus
         private readonly EventDispatcher $dispatcher
     ) {}
 
-    /** Register a listener. */
+    /**
+     * Register a listener.
+     *
+     * @param ListenerDefinition $listener
+     */
     public function listen(string $eventClass, callable|string|array $listener, int $priority = 0): int
     {
         return $this->provider->addListener($eventClass, $listener, $priority);
@@ -32,7 +42,7 @@ final class EventBus
     /** Register a subscriber object or FQCN. */
     public function subscribe(Subscriber|string $subscriber): void
     {
-        $instance = is_string($subscriber) ? new $subscriber() : $subscriber;
+        $instance = is_string($subscriber) ? $this->instantiateSubscriber($subscriber) : $subscriber;
         $map = $instance::getSubscribedEvents();
 
         foreach ($map as $eventClass => $definition) {
@@ -42,18 +52,22 @@ final class EventBus
             }
 
             // Single handler with priority or array of handlers
-            if (is_array($definition) && isset($definition[0]) && is_string($definition[0])) {
+            if (isset($definition[0]) && is_string($definition[0]) && $definition[0] !== '') {
                 [$method, $priority] = [$definition[0], $definition[1] ?? 0];
                 $this->listen($eventClass, [$instance, $method], (int)$priority);
                 continue;
             }
 
             // Multiple handlers for same event
-            if (is_array($definition)) {
-                foreach ($definition as $entry) {
-                    [$method, $priority] = [$entry[0], $entry[1] ?? 0];
-                    $this->listen($eventClass, [$instance, $method], (int)$priority);
+            foreach ($definition as $entry) {
+                if (!is_array($entry) || !isset($entry[0]) || !is_string($entry[0]) || $entry[0] === '') {
+                    throw new InvalidArgumentException(
+                        "Subscriber definition for '{$eventClass}' must contain method/priority pairs."
+                    );
                 }
+
+                [$method, $priority] = [$entry[0], $entry[1] ?? 0];
+                $this->listen($eventClass, [$instance, $method], (int)$priority);
             }
         }
     }
@@ -62,5 +76,28 @@ final class EventBus
     public function dispatch(object $event): object
     {
         return $this->dispatcher->dispatch($event);
+    }
+
+    private function instantiateSubscriber(string $subscriber): Subscriber
+    {
+        if (!class_exists($subscriber)) {
+            throw new InvalidArgumentException("Subscriber class '{$subscriber}' does not exist.");
+        }
+
+        try {
+            $instance = new $subscriber();
+        } catch (Throwable $exception) {
+            throw new InvalidArgumentException(
+                "Subscriber class '{$subscriber}' could not be instantiated without arguments.",
+                0,
+                $exception
+            );
+        }
+
+        if (!$instance instanceof Subscriber) {
+            throw new InvalidArgumentException("Subscriber class '{$subscriber}' must implement Subscriber.");
+        }
+
+        return $instance;
     }
 }

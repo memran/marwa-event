@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Marwa\Event\Contracts;
 
 /**
@@ -9,11 +11,13 @@ namespace Marwa\Event\Contracts;
  * - [UserRegistered::class => 'onUserRegistered']
  * - [UserRegistered::class => [['onUserRegistered', 100], ['audit', 0]]]
  * - [OrderPlaced::class => [['sendMail', 10]]]
+ *
+ * @phpstan-type SubscriptionMap array<class-string, non-empty-string|array<int, mixed>>
  */
 interface Subscriber
 {
     /**
-     * @return array<string, string|array{0:string,1?:int}|array<int, array{0:string,1?:int}>>
+     * @return SubscriptionMap
      */
     public static function getSubscribedEvents(): array;
 }
